@@ -1,0 +1,27 @@
+### Requiere la extension "REST Client" de VS Code (humao.rest-client)
+### Pulsa "Send Request" sobre cada bloque, en orden.
+
+### 0. Salud del servidor y la base de datos
+GET http://localhost:3000/api/health
+
+### 1. Pedir codigo (mira la terminal del servidor para ver el codigo)
+POST http://localhost:3000/api/auth/request-code
+Content-Type: application/json
+
+{ "email": "prueba@correo.com" }
+
+### 2. Verificar codigo (usuario nuevo: primero sin perfil)
+POST http://localhost:3000/api/auth/verify-code
+Content-Type: application/json
+
+{ "email": "prueba@correo.com", "code": "605585" }
+
+### 3. Verificar codigo con perfil (completa el registro)
+POST http://localhost:3000/api/auth/verify-code
+Content-Type: application/json
+
+{ "email": "prueba@correo.com", "code": "165196", "username": "juan_01", "display_name": "Juan" }
+
+### 4. Mi perfil (pega aqui el token recibido)
+GET http://localhost:3000/api/me
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjEsImlhdCI6MTc5MTY2NzUzOCwiZXhwIjoxNzk0MjU5NTM4fQ.VeNuFCGJ1ygRFtfuExW7bD4cFGQ1DpYKQjmTdzwIWKE

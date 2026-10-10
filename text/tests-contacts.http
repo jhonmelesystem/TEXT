@@ -1,0 +1,73 @@
+### FASE 2: contactos. Necesitas DOS usuarios para probar.
+### Pega los tokens una sola vez aqui arriba (sin comillas):
+@token1 = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjEsImlhdCI6MTc5MTY2NzUzOCwiZXhwIjoxNzk0MjU5NTM4fQ.VeNuFCGJ1ygRFtfuExW7bD4cFGQ1DpYKQjmTdzwIWKE
+@token2 = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjIsImlhdCI6MTc5MTY2OTk1MiwiZXhwIjoxNzk0MjYxOTUyfQ.MrXKoox_V6cYX25nt6afUfAFLVW6FFyC_ciPdNcpfZM
+
+### ---------- Crear el segundo usuario (ana_02) ----------
+### A) Pide el codigo (mira la terminal del servidor)
+POST http://localhost:3000/api/auth/request-code
+Content-Type: application/json
+
+{ "email": "ana@correo.com" }
+
+### B) Verifica con el codigo y crea el perfil; copia el token a @token2
+POST http://localhost:3000/api/auth/verify-code
+Content-Type: application/json
+
+{ "email": "ana@correo.com", "code": "415559", "username": "ana_02", "display_name": "Ana" }
+
+### ---------- Buscar (como Juan) ----------
+GET http://localhost:3000/api/users/search?q=ana
+Authorization: Bearer {{token1}}
+
+### ---------- Invitacion directa (Juan invita a Ana por ID) ----------
+POST http://localhost:3000/api/contacts/request
+Authorization: Bearer {{token1}}
+Content-Type: application/json
+
+{ "username": "ana_02" }
+
+### ---------- Ana ve sus solicitudes ----------
+GET http://localhost:3000/api/contacts/requests
+Authorization: Bearer {{token2}}
+
+### ---------- Ana acepta a Juan (id 1) ----------
+POST http://localhost:3000/api/contacts/1/accept
+Authorization: Bearer {{token2}}
+
+### ---------- Lista de contactos de Juan ----------
+GET http://localhost:3000/api/contacts
+Authorization: Bearer {{token1}}
+
+### ---------- Link/QR de invitacion de Juan ----------
+POST http://localhost:3000/api/invites
+Authorization: Bearer {{token1}}
+
+### ---------- Vista previa de la invitacion (publica; pega el token del link) ----------
+GET http://localhost:3000/api/invites/PEGA_TOKEN_DE_LA_INVITACION
+
+### ---------- Aceptar invitacion por link (como Ana) ----------
+POST http://localhost:3000/api/invites/PEGA_TOKEN_DE_LA_INVITACION/accept
+Authorization: Bearer {{token2}}
+
+### ---------- Bloquear (Juan bloquea a Ana, id 2) ----------
+POST http://localhost:3000/api/blocks
+Authorization: Bearer {{token1}}
+Content-Type: application/json
+
+{ "user_id": 2 }
+
+### ---------- Lista de bloqueados ----------
+GET http://localhost:3000/api/blocks
+Authorization: Bearer {{token1}}
+
+### ---------- Desbloquear ----------
+DELETE http://localhost:3000/api/blocks/2
+Authorization: Bearer {{token1}}
+
+### ---------- Reportar ----------
+POST http://localhost:3000/api/reports
+Authorization: Bearer {{token1}}
+Content-Type: application/json
+
+{ "user_id": 2, "reason": "Spam" }
