@@ -1,4 +1,6 @@
 require('dotenv').config();
+const http = require('http');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
@@ -19,6 +21,12 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/auth', require('./auth'));
 app.use('/api', require('./users'));
 app.use('/api', require('./contacts'));
+app.use('/api', require('./chat'));
+
+// Pagina de prueba del chat (solo desarrollo): http://localhost:3000/test
+app.use('/test', express.static(path.join(__dirname, '..', 'public')));
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`text backend en http://localhost:${port}`));
+const server = http.createServer(app);
+require('./socket')(server);
+server.listen(port, () => console.log(`text backend en http://localhost:${port}`));

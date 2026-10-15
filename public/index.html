@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>text - prueba de chat</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, sans-serif; background: #f2f2f2; color: #111; }
+  #login { padding: 10px; background: #111; color: #fff; display: flex; gap: 8px; align-items: center; }
+  #login input { flex: 1; padding: 8px; border: 1px solid #888; background: #fff; }
+  #who { font-size: 13px; color: #9ec1ff; white-space: nowrap; }
+  button { background: #1a73e8; color: #fff; border: 0; padding: 9px 14px; cursor: pointer; }
+  #app { display: flex; height: calc(100vh - 54px); }
+  #side { width: 280px; background: #fff; border-right: 1px solid #ccc; overflow: auto; }
+  .contact { padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; }
+  .contact.active { background: #e8f0fe; }
+  .badge { background: #1a73e8; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 12px; float: right; }
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #head { padding: 12px; background: #fff; border-bottom: 1px solid #ccc; font-weight: bold; }
+  #msgs { flex: 1; overflow: auto; padding: 12px; background: #dcdcdc; display: flex; flex-direction: column; }
+  .m { max-width: 70%; margin: 3px 0; padding: 7px 10px; background: #fff; word-wrap: break-word; align-self: flex-start; }
+  .m.me { background: #bcd7ff; align-self: flex-end; }
+  .t { font-size: 11px; color: #666; text-align: right; margin-top: 2px; }
+  .read { color: #1a73e8; font-weight: bold; }
+  #typing { height: 20px; font-size: 12px; color: #555; padding: 2px 12px; background: #dcdcdc; }
+  #bar { display: flex; gap: 8px; padding: 8px; background: #fff; border-top: 1px solid #ccc; }
+  #bar input { flex: 1; padding: 10px; border: 1px solid #888; }
+</style>
+</head>
+<body>
+<div id="login">
+  <input id="token" placeholder="Pega aqui tu token (sin comillas)">
+  <button id="connect">Conectar</button>
+  <span id="who"></span>
+</div>
+<div id="app">
+  <div id="side"></div>
+  <div id="main">
+    <div id="head">Elige un contacto</div>
+    <div id="msgs"></div>
+    <div id="typing"></div>
+    <div id="bar">
+      <input id="text" placeholder="Escribe un mensaje" autocomplete="off">
+      <button id="send">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let token = sessionStorage.getItem('token') || '';
+let me = null, socket = null, current = null, contacts = [], unread = {};
+$('token').value = token;
+
+async function api(path) {
+  const r = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.status);
+  return data;
+}
+
+$('connect').onclick = async () => {
+  token = $('token').value.trim().replace(/^"|"$/g, '').replace(/^Bearer\s+/i, '');
+  try {
+    me = await api('/api/me');
+    sessionStorage.setItem('token', token);
+    $('who').textContent = me.display_name + ' (@' + me.username + ')';
+    contacts = await api('/api/contacts');
+    const chats = await api('/api/chats');
+    unread = {};
+    chats.forEach((c) => { unread[c.chat_id] = Number(c.unread); });
+    renderContacts();
+    connectSocket();
+  } catch (e) { alert('Error: ' + e.message); }
+};
+
+function renderContacts() {
+  const box = $('side');
+  box.innerHTML = '';
+  contacts.forEach((c) => {
+    const d = document.createElement('div');
+    d.className = 'contact' + (current && current.chat_id === c.chat_id ? ' active' : '');
+    d.textContent = c.display_name + ' (@' + c.username + ')';
+    if (unread[c.chat_id]) {
+      const b = document.createElement('span');
+      b.className = 'badge';
+      b.textContent = unread[c.chat_id];
+      d.prepend(b);
+    }
+    d.onclick = () => openChat(c);
+    box.appendChild(d);
+  });
+}
+
+async function openChat(c) {
+  current = c;
+  unread[c.chat_id] = 0;
+  renderContacts();
+  $('head').textContent = c.display_name;
+  $('msgs').innerHTML = '';
+  $('typing').textContent = '';
+  const list = await api('/api/chats/' + c.chat_id + '/messages');
+  list.forEach(addMsg);
+  socket.emit('message:read', { chat_id: c.chat_id });
+}
+
+function setTick(id, status) {
+  const el = $('s' + id);
+  if (!el) return;
+  el.textContent = status === 'sent' ? '✓' : '✓✓';
+  el.className = status === 'read' ? 'read' : '';
+}
+
+function addMsg(m) {
+  if ($('m' + m.id)) return;
+  const mine = m.sender_id === me.id;
+  const d = document.createElement('div');
+  d.id = 'm' + m.id;
+  d.className = 'm' + (mine ? ' me' : '');
+  const body = document.createElement('div');
+  body.textContent = m.body;
+  d.appendChild(body);
+  const t = document.createElement('div');
+  t.className = 't';
+  t.textContent = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ';
+  if (mine) {
+    const s = document.createElement('span');
+    s.id = 's' + m.id;
+    t.appendChild(s);
+  }
+  d.appendChild(t);
+  $('msgs').appendChild(d);
+  if (mine) setTick(m.id, m.status);
+  $('msgs').scrollTop = $('msgs').scrollHeight;
+}
+
+function connectSocket() {
+  if (socket) socket.disconnect();
+  socket = io({ auth: { token } });
+  socket.on('connect_error', (e) => alert('Socket: ' + e.message));
+  socket.on('message:new', (m) => {
+    if (current && current.chat_id === m.chat_id) {
+      addMsg(m);
+      if (m.sender_id !== me.id) socket.emit('message:read', { chat_id: m.chat_id });
+    } else if (m.sender_id !== me.id) {
+      unread[m.chat_id] = (unread[m.chat_id] || 0) + 1;
+      renderContacts();
+    }
+  });
+  socket.on('message:status', (s) => s.message_ids.forEach((id) => setTick(id, s.status)));
+  socket.on('typing', (t) => {
+    if (current && current.chat_id === t.chat_id) {
+      $('typing').textContent = t.is_typing ? current.display_name + ' esta escribiendo...' : '';
+    }
+  });
+}
+
+function send() {
+  const body = $('text').value.trim();
+  if (!body || !current || !socket) return;
+  socket.emit('message:send', { chat_id: current.chat_id, body }, (r) => {
+    if (!r.ok) return alert(r.error);
+    addMsg(r.message);
+  });
+  $('text').value = '';
+}
+$('send').onclick = send;
+$('text').onkeydown = (e) => { if (e.key === 'Enter') send(); };
+
+let typingSent = false, typingTimer = null;
+$('text').oninput = () => {
+  if (!current || !socket) return;
+  if (!typingSent) { socket.emit('typing', { chat_id: current.chat_id, is_typing: true }); typingSent = true; }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => {
+    socket.emit('typing', { chat_id: current.chat_id, is_typing: false });
+    typingSent = false;
+  }, 1500);
+};
+
+if (token) $('connect').click();
+</script>
+</body>
+</html>
