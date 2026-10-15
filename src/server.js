@@ -22,11 +22,20 @@ app.use('/api/auth', require('./auth'));
 app.use('/api', require('./users'));
 app.use('/api', require('./contacts'));
 app.use('/api', require('./chat'));
+app.use('/api', require('./media'));
+app.use('/api', require('./video'));
+app.use('/api', require('./settings'));
+
+// Imagenes enviadas (nombres aleatorios e imposibles de adivinar)
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), {
+  maxAge: '30d', immutable: true, index: false
+}));
 
 // Pagina de prueba del chat (solo desarrollo): http://localhost:3000/test
 app.use('/test', express.static(path.join(__dirname, '..', 'public')));
 
 const port = process.env.PORT || 3000;
 const server = http.createServer(app);
-require('./socket')(server);
+server.requestTimeout = 30 * 60 * 1000; // permite subidas grandes en conexiones lentas (30 min)
+app.set('io', require('./socket')(server));
 server.listen(port, () => console.log(`text backend en http://localhost:${port}`));

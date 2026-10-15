@@ -23,9 +23,24 @@
   .m.me { background: #bcd7ff; align-self: flex-end; }
   .t { font-size: 11px; color: #666; text-align: right; margin-top: 2px; }
   .read { color: #1a73e8; font-weight: bold; }
-  #typing { height: 20px; font-size: 12px; color: #555; padding: 2px 12px; background: #dcdcdc; }
+  #typing { height: 20px; font-size: 12px; color: #555; padding: 2px 12px; background: #ececec; }
   #bar { display: flex; gap: 8px; padding: 8px; background: #fff; border-top: 1px solid #ccc; }
-  #bar input { flex: 1; padding: 10px; border: 1px solid #888; }
+  #bar input[type=text], #bar #text { flex: 1; padding: 10px; border: 1px solid #888; }
+  #attach { background: #555; }
+  .pic { display: block; max-width: 240px; max-height: 300px; cursor: pointer; margin-bottom: 4px; }
+  #tools { padding: 6px 12px; background: #fff; border-bottom: 1px solid #ccc; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+  #tools button { padding: 5px 10px; font-size: 12px; background: #555; }
+  #tools input[type=color] { width: 34px; height: 28px; padding: 0; border: 1px solid #888; }
+  .sw { display: inline-block; width: 22px; height: 22px; border: 1px solid #777; cursor: pointer; }
+  body.dark { background: #0d0d0d; color: #eee; }
+  body.dark #side, body.dark #head, body.dark #bar, body.dark #tools { background: #1a1a1a; border-color: #333; color: #eee; }
+  body.dark .contact { border-color: #2a2a2a; }
+  body.dark .contact.active { background: #12305f; }
+  body.dark .m { background: #2a2a2a; color: #eee; }
+  body.dark .m.me { background: #1a4a8f; }
+  body.dark .t { color: #aaa; }
+  body.dark #bar #text { background: #222; color: #eee; border-color: #555; }
+  body.dark #typing { background: #1a1a1a; color: #aaa; }
 </style>
 </head>
 <body>
@@ -38,9 +53,20 @@
   <div id="side"></div>
   <div id="main">
     <div id="head">Elige un contacto</div>
+    <div id="tools">
+      Fondo:
+      <input type="color" id="bgcolor" value="#ffffff" title="Elegir color">
+      <span id="swatches"></span>
+      <button id="bgimg">Imagen</button>
+      <input type="file" id="bgfile" accept="image/*" hidden>
+      <button id="bgreset">Quitar</button>
+      <button id="theme">Tema oscuro</button>
+    </div>
     <div id="msgs"></div>
     <div id="typing"></div>
     <div id="bar">
+      <button id="attach" title="Enviar imagen o video">&#128206;</button>
+      <input type="file" id="file" accept="image/*,video/*" hidden>
       <input id="text" placeholder="Escribe un mensaje" autocomplete="off">
       <button id="send">Enviar</button>
     </div>
@@ -73,6 +99,7 @@ $('connect').onclick = async () => {
     chats.forEach((c) => { unread[c.chat_id] = Number(c.unread); });
     renderContacts();
     connectSocket();
+    applyBg(await api('/api/settings'));
   } catch (e) { alert('Error: ' + e.message); }
 };
 
@@ -119,9 +146,28 @@ function addMsg(m) {
   const d = document.createElement('div');
   d.id = 'm' + m.id;
   d.className = 'm' + (mine ? ' me' : '');
-  const body = document.createElement('div');
-  body.textContent = m.body;
-  d.appendChild(body);
+  if (m.type === 'image' && m.media_url) {
+    const img = document.createElement('img');
+    img.className = 'pic';
+    img.src = m.media_url;
+    img.onload = () => { $('msgs').scrollTop = $('msgs').scrollHeight; };
+    img.onclick = () => window.open(m.media_url, '_blank');
+    d.appendChild(img);
+  }
+  if (m.type === 'video' && m.media_url) {
+    const v = document.createElement('video');
+    v.className = 'pic';
+    v.controls = true;
+    v.preload = 'metadata';
+    v.poster = m.media_url.replace(/\.mp4$/, '.jpg');
+    v.src = m.media_url;
+    d.appendChild(v);
+  }
+  if (m.body) {
+    const body = document.createElement('div');
+    body.textContent = m.body;
+    d.appendChild(body);
+  }
   const t = document.createElement('div');
   t.className = 't';
   t.textContent = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ';
@@ -167,6 +213,69 @@ function send() {
   $('text').value = '';
 }
 $('send').onclick = send;
+
+$('attach').onclick = () => $('file').click();
+let VIDEO_MAX = 60;
+fetch('/api/limits').then((r) => r.json()).then((l) => { if (l.video_max_seconds) VIDEO_MAX = l.video_max_seconds; }).catch(() => {});
+
+// Duracion del video leida en el navegador, antes de subirlo
+function videoDuration(file) {
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(v.duration); };
+    v.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    v.src = url;
+  });
+}
+
+// Subida con barra de progreso
+function uploadFile(url, fd, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', url);
+    x.setRequestHeader('Authorization', 'Bearer ' + token);
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+    x.onload = () => {
+      let data = {};
+      try { data = JSON.parse(x.responseText); } catch (e) {}
+      resolve({ ok: x.status >= 200 && x.status < 300, data });
+    };
+    x.onerror = () => reject(new Error('Sin conexion con el servidor'));
+    x.send(fd);
+  });
+}
+
+$('file').onchange = async () => {
+  const f = $('file').files[0];
+  $('file').value = '';
+  if (!f || !current) return;
+  const isVideo = f.type.startsWith('video/');
+  if (isVideo) {
+    const d = await videoDuration(f);
+    if (d && d > VIDEO_MAX + 0.5) {
+      return alert('El video dura ' + Math.round(d) + ' s y el maximo es ' + VIDEO_MAX + ' s. Recortalo antes de enviarlo.');
+    }
+  }
+  const fd = new FormData();
+  const caption = $('text').value.trim();
+  if (caption) { fd.append('caption', caption); $('text').value = ''; }
+  fd.append('file', f);
+  const label = isVideo ? 'video' : 'imagen';
+  const url = '/api/chats/' + current.chat_id + (isVideo ? '/video' : '/media');
+  $('typing').textContent = 'Subiendo ' + label + '... 0%';
+  try {
+    const r = await uploadFile(url, fd, (p) => {
+      $('typing').textContent = p < 100
+        ? 'Subiendo ' + label + '... ' + p + '%'
+        : (isVideo ? 'Procesando video en el servidor (puede tardar)...' : 'Procesando imagen...');
+    });
+    if (!r.ok) return alert(r.data.error || 'Error al enviar');
+    addMsg(r.data.message);
+  } catch (e) { alert('Error al enviar: ' + e.message); }
+  finally { $('typing').textContent = ''; }
+};
 $('text').onkeydown = (e) => { if (e.key === 'Enter') send(); };
 
 let typingSent = false, typingTimer = null;
@@ -179,6 +288,70 @@ $('text').oninput = () => {
     typingSent = false;
   }, 1500);
 };
+
+
+// ---------- Personalizacion ----------
+const PRESETS = ['#FFFFFF', '#E0E0E0', '#9E9E9E', '#BBD7FF', '#1A73E8', '#111111'];
+
+function applyBg(s) {
+  const el = $('msgs');
+  if (s.chat_bg_type === 'image') {
+    el.style.background = 'url("' + s.chat_bg_value + '") center / cover no-repeat';
+  } else {
+    el.style.background = s.chat_bg_value;
+    $('bgcolor').value = s.chat_bg_value.toLowerCase();
+  }
+}
+
+async function call(method, path, body, isForm) {
+  const headers = { Authorization: 'Bearer ' + token };
+  if (body && !isForm) headers['Content-Type'] = 'application/json';
+  const r = await fetch(path, { method, headers, body: body ? (isForm ? body : JSON.stringify(body)) : undefined });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || r.status);
+  return d;
+}
+
+async function setBgColor(color) {
+  try { applyBg(await call('PUT', '/api/settings/background', { type: 'color', value: color })); }
+  catch (e) { alert('Error: ' + e.message); }
+}
+
+PRESETS.forEach((c) => {
+  const sw = document.createElement('span');
+  sw.className = 'sw';
+  sw.style.background = c;
+  sw.onclick = () => setBgColor(c);
+  $('swatches').appendChild(sw);
+});
+
+$('bgcolor').onchange = () => setBgColor($('bgcolor').value);
+$('bgimg').onclick = () => $('bgfile').click();
+$('bgfile').onchange = async () => {
+  const f = $('bgfile').files[0];
+  $('bgfile').value = '';
+  if (!f || !me) return;
+  const fd = new FormData();
+  fd.append('file', f);
+  try { applyBg(await call('POST', '/api/settings/background/image', fd, true)); }
+  catch (e) { alert('Error: ' + e.message); }
+};
+$('bgreset').onclick = async () => {
+  if (!me) return;
+  try { applyBg(await call('DELETE', '/api/settings/background')); }
+  catch (e) { alert('Error: ' + e.message); }
+};
+
+function applyTheme(dark) {
+  document.body.classList.toggle('dark', dark);
+  $('theme').textContent = dark ? 'Tema claro' : 'Tema oscuro';
+}
+$('theme').onclick = () => {
+  const dark = !document.body.classList.contains('dark');
+  applyTheme(dark);
+  localStorage.setItem('theme', dark ? 'dark' : 'light');
+};
+applyTheme(localStorage.getItem('theme') === 'dark');
 
 if (token) $('connect').click();
 </script>

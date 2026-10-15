@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
 const { toId, getChat, canMessage } = require('./chatlib');
+const { createAndDispatch } = require('./messaging');
 
 const room = (userId) => `user:${userId}`;
 const MAX_BODY = 4000;
@@ -49,7 +50,7 @@ module.exports = function initSocket(httpServer) {
     socket.join(room(me));
     markPendingDelivered(me).catch((e) => console.error(e));
 
-    // Enviar mensaje de texto
+    // Enviar mensaje de texto (las imagenes se envian por POST /api/chats/:id/media)
     socket.on('message:send', async (data, ack) => {
       const reply = typeof ack === 'function' ? ack : () => {};
       try {
@@ -63,26 +64,9 @@ module.exports = function initSocket(httpServer) {
         if (!(await canMessage(me, info.other))) {
           return reply({ ok: false, error: 'No puedes enviar mensajes a este usuario' });
         }
-
-        const [result] = await db.query(
-          "INSERT INTO messages (chat_id, sender_id, type, body) VALUES (?, ?, 'text', ?)",
-          [chatId, me, body]
-        );
-        const [rows] = await db.query(
-          'SELECT id, chat_id, sender_id, type, body, media_url, duration_sec, status, created_at FROM messages WHERE id = ?',
-          [result.insertId]
-        );
-        const message = rows[0];
-
-        // Si el destinatario esta conectado, queda "entregado" al instante
-        const online = (await io.in(room(info.other)).fetchSockets()).length > 0;
-        if (online) {
-          await db.query("UPDATE messages SET status = 'delivered' WHERE id = ?", [message.id]);
-          message.status = 'delivered';
-        }
-
-        io.to(room(info.other)).emit('message:new', message);
-        socket.to(room(me)).emit('message:new', message); // mis otros dispositivos
+        const message = await createAndDispatch(io, {
+          chatId, me, other: info.other, type: 'text', body, originSocket: socket
+        });
         reply({ ok: true, message });
       } catch (err) {
         console.error(err);
@@ -133,3 +117,4 @@ module.exports = function initSocket(httpServer) {
 
   return io;
 };
+
