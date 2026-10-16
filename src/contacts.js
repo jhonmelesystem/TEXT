@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const QRCode = require('qrcode');
 const rateLimit = require('express-rate-limit');
 const db = require('./db');
 const { requireAuth: auth } = require('./middleware');
@@ -189,7 +190,9 @@ router.post('/invites', auth, wrap(async (req, res) => {
     const [row] = await db.query('SELECT expires_at FROM invites WHERE token = ?', [token]);
     expires = row[0].expires_at;
   }
-  res.json({ token, link: `${appUrl()}/invite/${token}`, expires_at: expires });
+  const link = `${appUrl()}/invite/${token}`;
+  const qr = await QRCode.toDataURL(link, { margin: 1, width: 240 });
+  res.json({ token, link, qr, expires_at: expires });
 }));
 
 // Revocar mis links (el siguiente POST /invites genera uno nuevo)

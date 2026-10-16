@@ -31,6 +31,16 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), {
   maxAge: '30d', immutable: true, index: false
 }));
 
+// Enlace de invitacion (el que lleva el QR): abre la app con el token
+app.get('/invite/:token', (req, res) => {
+  const ok = /^[a-f0-9]{48}$/.test(req.params.token);
+  res.redirect('/app/' + (ok ? '#invite=' + req.params.token : ''));
+});
+
+// App real: http://localhost:3000/app
+app.use('/app', express.static(path.join(__dirname, '..', 'public', 'app')));
+app.get('/', (req, res) => res.redirect('/app/'));
+
 // Pagina de prueba del chat (solo desarrollo): http://localhost:3000/test
 app.use('/test', express.static(path.join(__dirname, '..', 'public')));
 
