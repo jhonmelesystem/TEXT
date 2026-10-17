@@ -11,7 +11,7 @@ const { wrap } = require('./chatlib');
 
 const router = express.Router();
 
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+const { UPLOAD_DIR } = require('./paths');
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const OWN_BG_RE = /^\/uploads\/bg_[a-f0-9]{32}\.webp$/;
 const MAX_PIXELS = 50 * 1000 * 1000;
@@ -24,7 +24,7 @@ const upload = multer({
 }).single('file');
 
 const limiter = rateLimit({
-  windowMs: 60 * 1000, limit: 60,
+  windowMs: 60 * 1000, limit: 10,
   message: { error: 'Demasiados cambios. Espera un momento.' }
 });
 

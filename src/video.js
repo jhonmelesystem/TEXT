@@ -12,9 +12,7 @@ const { probeVideo, transcodeVideo, makeThumbnail } = require('./ffmpeg');
 
 const router = express.Router();
 
-const ROOT = path.join(__dirname, '..');
-const UPLOAD_DIR = path.join(ROOT, 'uploads');
-const TMP_DIR = path.join(ROOT, 'tmp');      // archivos temporales, se borran al terminar
+const { UPLOAD_DIR, TMP_DIR } = require('./paths'); // TMP_DIR: temporales, se borran al terminar
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(TMP_DIR, { recursive: true });
 

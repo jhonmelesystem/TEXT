@@ -11,7 +11,7 @@ const { createAndDispatch } = require('./messaging');
 
 const router = express.Router();
 
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+const { UPLOAD_DIR } = require('./paths');
 const MAX_BYTES = 10 * 1024 * 1024;           // 10 MB de entrada
 const MAX_PIXELS = 50 * 1000 * 1000;          // evita imagenes gigantes que agoten la memoria
 const ALLOWED = new Set(['jpeg', 'png', 'webp', 'gif']);
