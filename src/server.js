@@ -69,8 +69,14 @@ server.requestTimeout = 30 * 60 * 1000; // permite subidas grandes en conexiones
 app.set('io', require('./socket')(server));
 
 migrate()
-  .then(() => server.listen(port, () => console.log(`text backend en http://localhost:${port}`)))
+  .then(() => {
+    server.listen(port, () => console.log(`text backend en http://localhost:${port}`));
+  })
   .catch((err) => {
-    console.error('No se pudo preparar la base de datos:', err.message);
-    process.exit(1);
+    // 🔍 Imprimimos el error COMPLETO (incluyendo stack trace) para ver la causa exacta en Railway
+    console.error('❌ ERROR CRITICO AL INICIAR:', err);
+    
+    // Opcional: comentamos el process.exit(1) temporalmente para que el servidor 
+    // al menos se quede encendido y te permita entrar a /api/health a ver qué pasa
+    // process.exit(1); 
   });
