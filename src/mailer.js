@@ -1,34 +1,53 @@
 const nodemailer = require('nodemailer');
 
-const transporter = nodemailer.createTransport({
-  host: process.env.MAIL_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.MAIL_PORT || '465'),
-  secure: process.env.MAIL_PORT === '465', // true para puerto 465
-  auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASS,
-  },
-});
+// Opcion SMTP (funciona en tu PC o en planes de Railway que permiten SMTP)
+let smtp = null;
+if (process.env.SMTP_HOST) {
+  smtp = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+  });
+}
 
-async function sendCode(to, code) {
-  // Si tienes activado SHOW_CODES_IN_LOGS, también podemos imprimirlo por seguridad en la consola
-  if (process.env.SHOW_CODES_IN_LOGS === 'true' || process.env.SHOW_CODES_IN_LOGS === '1') {
-    console.log(`[DEBUG] Código para ${to}: ${code}`);
+// Opcion API HTTPS de Brevo (necesaria en Railway Hobby, que bloquea SMTP)
+async function viaBrevo(email, code) {
+  if (!process.env.MAIL_FROM_EMAIL) throw new Error('Falta MAIL_FROM_EMAIL (el remitente verificado en Brevo)');
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json',
+      accept: 'application/json'
+    },
+    body: JSON.stringify({
+      sender: { name: process.env.MAIL_FROM_NAME || 'text', email: process.env.MAIL_FROM_EMAIL },
+      to: [{ email }],
+      subject: 'Tu codigo de text',
+      textContent: `Tu codigo de verificacion es ${code}. Vence en 10 minutos. Si no lo pediste, ignora este mensaje.`
+    }),
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!res.ok) throw new Error(`Brevo respondio ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
+async function sendCode(email, code) {
+  if (process.env.BREVO_API_KEY) return viaBrevo(email, code);
+  if (smtp) {
+    return smtp.sendMail({
+      from: process.env.MAIL_FROM,
+      to: email,
+      subject: 'Tu codigo de text',
+      text: `Tu codigo de verificacion es ${code}. Vence en 10 minutos.`
+    });
   }
-
-  const mailOptions = {
-    from: process.env.MAIL_FROM || process.env.MAIL_USER,
-    to: to,
-    subject: 'Tu código de verificación',
-    text: `Tu código de verificación es: ${code}`,
-    html: `<div style="font-family: Arial, sans-serif; padding: 20px;">
-             <h2>Tu código de verificación</h2>
-             <p>Usa el siguiente código para completar tu registro:</p>
-             <h1 style="color: #4F46E5; letter-spacing: 4px;">${code}</h1>
-           </div>`,
-  };
-
-  return await transporter.sendMail(mailOptions);
+  // Sin proveedor de correo: el codigo solo se muestra en desarrollo
+  // (o en produccion si pones SHOW_CODES_IN_LOGS=true, solo para pruebas)
+  if (process.env.NODE_ENV !== 'production' || process.env.SHOW_CODES_IN_LOGS === 'true') {
+    console.log(`\n[DEV] Codigo para ${email}: ${code}\n`);
+    return;
+  }
+  throw new Error('No hay proveedor de correo configurado (define BREVO_API_KEY)');
 }
 
 module.exports = { sendCode };
