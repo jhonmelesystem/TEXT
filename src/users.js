@@ -7,7 +7,7 @@ const router = express.Router();
 // Mi perfil
 router.get('/me', requireAuth, async (req, res) => {
   const [rows] = await db.query(
-    'SELECT id, email, username, display_name, avatar_url, created_at FROM users WHERE id = ?',
+    'SELECT id, email, username, display_name, avatar_url, cover_url, created_at FROM users WHERE id = ?',
     [req.userId]
   );
   if (!rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });

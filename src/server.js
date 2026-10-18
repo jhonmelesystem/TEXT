@@ -1,11 +1,4 @@
-// Esto hace que lea el .env si estás en tu PC, pero si no existe en Railway, no da error ni rompe nada
-require('dotenv').config({ silent: true });
-// O simplemente:
-// Carga el archivo .env solo si estás en tu computadora (desarrollo local)
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
-}
-
+require('dotenv').config();
 const http = require('http');
 const path = require('path');
 const express = require('express');
@@ -42,6 +35,8 @@ app.use('/api', require('./contacts'));
 app.use('/api', require('./chat'));
 app.use('/api', require('./media'));
 app.use('/api', require('./video'));
+app.use('/api', require('./audio'));
+app.use('/api', require('./profile'));
 app.use('/api', require('./settings'));
 app.use('/api', (req, res) => res.status(404).json({ error: 'No encontrado' }));
 
@@ -69,10 +64,11 @@ server.requestTimeout = 30 * 60 * 1000; // permite subidas grandes en conexiones
 app.set('io', require('./socket')(server));
 
 migrate()
-  .then(() => {
-    server.listen(port, () => console.log(`text backend en http://localhost:${port}`));
-  })
+  .then(() => server.listen(port, () => console.log(`text backend en http://localhost:${port}`)))
   .catch((err) => {
+    console.error('No se pudo preparar la base de datos:', err.message);
+    process.exit(1);
+
     // 🔍 Imprimimos el error COMPLETO (incluyendo stack trace) para ver la causa exacta en Railway
     console.error('❌ ERROR CRITICO AL INICIAR:', err);
     

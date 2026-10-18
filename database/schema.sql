@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   username VARCHAR(30) NOT NULL UNIQUE,
   display_name VARCHAR(60) NOT NULL,
   avatar_url VARCHAR(255),
+  cover_url VARCHAR(255),
   email_verified TINYINT DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -48,7 +49,7 @@ CREATE TABLE IF NOT EXISTS messages (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   chat_id BIGINT NOT NULL,
   sender_id BIGINT NOT NULL,
-  type ENUM('text','image','video') DEFAULT 'text',
+  type ENUM('text','image','video','audio') DEFAULT 'text',
   body TEXT,
   media_url VARCHAR(255),
   duration_sec INT,

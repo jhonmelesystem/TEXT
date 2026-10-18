@@ -2,14 +2,18 @@ const $=(s,r=document)=>r.querySelector(s);
 const h=(t,p,...k)=>{const e=document.createElement(t);for(const[a,v]of Object.entries(p||{}))a.startsWith('on')?e[a]=v:a==='cls'?e.className=v:e.setAttribute(a,v);for(const c of k.flat())if(c!=null&&c!==false)e.append(c);return e};
 const BASE=window.TEXT_API||'';
 const PRESETS=['#FFFFFF','#E0E0E0','#9E9E9E','#BBD7FF','#1A73E8','#111111'];
-let tk=localStorage.getItem('tk'),me,sock,settings,tab='chats',cur=null,chats=[],contacts=[],unread={},lastQ='',VMAX=60,side,pane,msgsEl,subEl,appEl;
+let tk=localStorage.getItem('tk'),me,sock,settings,tab='chats',cur=null,chats=[],contacts=[],unread={},lastQ='',VMAX=60,side,pane,msgsEl,subEl,appEl,recCtl=null,playing=null;
 const root=$('#root'),show=e=>root.replaceChildren(e);
-const av=n=>h('div',{cls:'av'},(n||'?')[0].toUpperCase());
-const prev=c=>(c.last_sender===me.id?'Tu: ':'')+(c.last_type==='image'?'📷 Foto':c.last_type==='video'?'🎥 Video':c.last_body||'');
+const pad=n=>String(n).padStart(2,'0');
+const fmt=s=>{s=Math.max(0,Math.floor(s||0));const hh=Math.floor(s/3600),mm=Math.floor(s%3600/60);return(hh?hh+':'+pad(mm):mm)+':'+pad(s%60)};
+const bg=u=>u?`background-image:url("${BASE}${u}")`:'';
+const av=(n,u,c)=>h('div',{cls:'av'+(c?' '+c:''),style:bg(u)},u?'':(n||'?')[0].toUpperCase());
+const prev=c=>(c.last_sender===me.id?'Tu: ':'')+(c.last_type==='image'?'📷 Foto':c.last_type==='video'?'🎥 Video':c.last_type==='audio'?'🎤 Nota de voz':c.last_body||'');
 const totalUnread=()=>Object.values(unread).reduce((a,b)=>a+b,0);
 const theme=()=>document.body.classList.toggle('dark',localStorage.getItem('th')==='d');
 const btn=(t,f,g)=>h('button',{cls:g?'g':'',onclick:async()=>{try{await f()}catch(x){alert(x.message)}}},t);
-const row=(u,extra,click,sub)=>h('div',{cls:'row',onclick:click},av(u.display_name),h('div',{cls:'grow'},h('b',{},u.display_name),h('small',{},sub??'@'+u.username)),extra);
+const row=(u,extra,click,sub)=>h('div',{cls:'row',onclick:click},av(u.display_name,u.avatar_url),h('div',{cls:'grow'},h('b',{},u.display_name),h('small',{},sub??'@'+u.username)),extra);
+const toBottom=sm=>msgsEl&&msgsEl.scrollTo({top:msgsEl.scrollHeight,behavior:sm?'smooth':'auto'});
 
 async function api(m,p,b){
   const r=await fetch(BASE+p,{method:m,headers:{...(tk&&{Authorization:'Bearer '+tk}),...(b&&{'Content-Type':'application/json'})},body:b?JSON.stringify(b):undefined});
@@ -27,7 +31,7 @@ async function load(){
 const refreshList=()=>load().then(()=>tab==='chats'&&drawSide()).catch(()=>{});
 const act=async f=>{await f();await load();drawSide()};
 
-function logout(){localStorage.removeItem('tk');localStorage.removeItem('pin');const lk=$('.lock');if(lk)lk.remove();locked=false;tk=null;sock&&sock.disconnect();cur=null;show(loginView())}
+function logout(){localStorage.removeItem('tk');localStorage.removeItem('pin');const lk=$('.lock');if(lk)lk.remove();locked=false;if(recCtl)recCtl.cancel();tk=null;sock&&sock.disconnect();cur=null;show(loginView())}
 async function start(t){tk=t;localStorage.setItem('tk',t);await boot()}
 async function boot(){
   try{me=await api('GET','/api/me');settings=await api('GET','/api/settings');await load()}catch{return show(loginView())}
@@ -59,12 +63,14 @@ function drawSide(){
 
 function chatsTab(b){
   if(!chats.length)b.append(h('p',{cls:'sec mut'},'Aun no hay conversaciones. Ve a Contactos para empezar.'));
-  chats.forEach(c=>b.append(row(c,unread[c.chat_id]?h('span',{cls:'badge'},unread[c.chat_id]):null,()=>openChat(c.chat_id,c.user_id,c.display_name),prev(c))))}
+  chats.forEach(c=>b.append(row(c,unread[c.chat_id]?h('span',{cls:'badge'},unread[c.chat_id]):null,()=>openChat(c),prev(c))))}
+
+const cOpen=c=>openChat({chat_id:c.chat_id,user_id:c.id,display_name:c.display_name,avatar_url:c.avatar_url});
 
 function contactsTab(b){
   const q=h('input',{placeholder:'Buscar por ID o nombre',value:lastQ}),res=h('div'),reqs=h('div'),inv=h('div'),pl=h('input',{placeholder:'Pegar enlace de invitacion'});
   const accept=u=>act(()=>api('POST','/api/contacts/'+u.id+'/accept'));
-  const action=u=>u.relation==='contact'?btn('Mensaje',()=>{const c=contacts.find(x=>x.id===u.id);c&&openChat(c.chat_id,u.id,u.display_name)},1)
+  const action=u=>u.relation==='contact'?btn('Mensaje',()=>{const c=contacts.find(x=>x.id===u.id);c&&cOpen(c)},1)
     :u.relation==='request_sent'?h('small',{},'Enviada')
     :u.relation==='request_received'?btn('Aceptar',()=>accept(u))
     :btn('Agregar',()=>act(()=>api('POST','/api/contacts/request',{username:u.username})));
@@ -74,10 +80,21 @@ function contactsTab(b){
   b.append(
     h('div',{cls:'sec'},h('h4',{},'Agregar contacto'),q,btn('Buscar',find),res),reqs,
     h('div',{cls:'sec'},h('h4',{},'Mis contactos'),!contacts.length&&h('small',{},'Aun no tienes contactos')),
-    ...contacts.map(c=>row(c,null,()=>openChat(c.chat_id,c.id,c.display_name))),
+    ...contacts.map(c=>row(c,null,()=>cOpen(c))),
     h('div',{cls:'sec'},h('h4',{},'Invitar por enlace'),
       btn('Mi enlace de invitacion',async()=>{const i=await api('POST','/api/invites');inv.replaceChildren(h('img',{src:i.qr,width:'200',height:'200'}),h('br'),h('small',{},i.link),h('br'),btn('Copiar',()=>navigator.clipboard.writeText(i.link),1),navigator.share&&btn('Compartir',()=>navigator.share({title:'text',text:'Agregame en text',url:i.link}),1))}),inv,
       h('br'),pl,btn('Unirme',async()=>{const t=(pl.value.match(/[a-f0-9]{48}/)||[])[0];if(!t)throw new Error('Enlace invalido');await join(t)})))}
+
+function profileCard(){
+  const fa=h('input',{type:'file',accept:'image/*',hidden:''}),fc=h('input',{type:'file',accept:'image/*',hidden:''});
+  const pick=(inp,path)=>{inp.onchange=async()=>{const f=inp.files[0];inp.value='';if(!f)return;const fd=new FormData();fd.append('file',f);try{Object.assign(me,await up(path,fd,()=>{}));drawSide()}catch(e){alert(e.message)}}};
+  pick(fa,'/api/me/avatar');pick(fc,'/api/me/cover');
+  const del=p=>async()=>{Object.assign(me,await api('DELETE',p));drawSide()};
+  return h('div',{},
+    h('div',{cls:'cover',style:bg(me.cover_url)}),av(me.display_name,me.avatar_url,'big'),
+    h('div',{cls:'sec'},h('b',{},me.display_name),h('br'),h('small',{},'@'+me.username),h('br'),
+      btn('Foto de perfil',()=>fa.click(),1),fa,btn('Portada',()=>fc.click(),1),fc,
+      me.avatar_url&&btn('Quitar foto',del('/api/me/avatar'),1),me.cover_url&&btn('Quitar portada',del('/api/me/cover'),1)))}
 
 function settingsTab(b){
   const nm=h('input',{value:me.display_name}),bgf=h('input',{type:'file',accept:'image/*',hidden:''}),bl=h('div');
@@ -91,7 +108,8 @@ function settingsTab(b){
     pin&&h('div',{},h('small',{},'Bloquear: '),h('select',{onchange:e=>localStorage.setItem('lockms',e.target.value)},...[['0','al salir de la app'],['60000','tras 1 minuto'],['300000','tras 5 minutos']].map(([v,l])=>h('option',{value:v,...(ms===v&&{selected:''})},l)))));
   api('GET','/api/blocks').then(l=>l.forEach(u=>bl.append(row(u,btn('Desbloquear',async()=>{await api('DELETE','/api/blocks/'+u.id);drawSide()},1))))).catch(()=>{});
   b.append(
-    h('div',{cls:'sec'},h('h4',{},'Mi perfil'),h('small',{},'Tu ID: @'+me.username),h('br'),nm,btn('Guardar nombre',async()=>{await api('PATCH','/api/me',{display_name:nm.value});me.display_name=nm.value.trim();alert('Guardado')})),
+    profileCard(),
+    h('div',{cls:'sec'},h('h4',{},'Mi nombre'),nm,btn('Guardar nombre',async()=>{await api('PATCH','/api/me',{display_name:nm.value});me.display_name=nm.value.trim();alert('Guardado');drawSide()})),
     h('div',{cls:'sec'},h('h4',{},'Fondo del chat'),...PRESETS.map(c=>h('span',{cls:'sw',style:'background:'+c,onclick:()=>color(c)})),h('input',{type:'color',value:'#ffffff',onchange:e=>color(e.target.value)}),h('br'),btn('Imagen',()=>bgf.click(),1),bgf,btn('Quitar',()=>setBg(api('DELETE','/api/settings/background')),1)),
     h('div',{cls:'sec'},btn('Cambiar tema claro/oscuro',()=>{localStorage.setItem('th',document.body.classList.contains('dark')?'l':'d');theme()},1)),
     secPin,
@@ -103,8 +121,9 @@ function applyBg(){
   const s=settings,v=s.chat_bg_value;
   msgsEl.style.background=s.chat_bg_type==='image'?`url("${BASE}${v}") center/cover no-repeat`:(v.toUpperCase()==='#FFFFFF'?'':v)}
 
-function openChat(chat_id,user_id,name){
-  cur={chat_id,user_id,name};unread[chat_id]=0;
+function openChat(u){
+  if(recCtl)recCtl.cancel();
+  cur={chat_id:u.chat_id,user_id:u.user_id,display_name:u.display_name,avatar_url:u.avatar_url};unread[cur.chat_id]=0;
   appEl.classList.add('in-chat');drawSide();drawChat()}
 
 async function drawChat(){
@@ -112,58 +131,111 @@ async function drawChat(){
   const c=cur;
   subEl=h('small',{},'');msgsEl=h('div',{cls:'msgs'});applyBg();
   const more=h('button',{cls:'g',onclick:async()=>{const f=$('.m',msgsEl);const l=await api('GET',`/api/chats/${c.chat_id}/messages?before=${f.dataset.id}`);l.reverse().forEach(m=>add(m,1));if(l.length<50)more.remove()}},'Cargar anteriores');
-  const file=h('input',{type:'file',accept:'image/*,video/*',hidden:''}),txt=h('input',{placeholder:'Escribe un mensaje',autocomplete:'off'});
+  const file=h('input',{type:'file',accept:'image/*,video/*',hidden:''}),txt=h('input',{placeholder:'Escribe un mensaje',autocomplete:'off'}),bar=h('div',{cls:'bar'});
+  const ab=h('button',{cls:'act',onclick:()=>txt.value.trim()?send(txt):startRec(bar,drawBar)},'🎤');
+  function drawBar(){bar.replaceChildren(btn('📎',()=>file.click(),1),file,txt,ab)}
+  const upd=()=>{ab.textContent=txt.value.trim()?'➤':'🎤'};
+  txt.addEventListener('x',upd);
   file.onchange=()=>sendFile(file.files[0],txt,file);
   txt.onkeydown=e=>{if(e.key==='Enter')send(txt)};
-  let ts=0,tt;txt.oninput=()=>{if(!ts){sock.emit('typing',{chat_id:c.chat_id,is_typing:true});ts=1}clearTimeout(tt);tt=setTimeout(()=>{sock.emit('typing',{chat_id:c.chat_id,is_typing:false});ts=0},1500)};
+  let ts=0,tt;
+  txt.oninput=()=>{upd();if(!ts){sock.emit('typing',{chat_id:c.chat_id,is_typing:true});ts=1}clearTimeout(tt);tt=setTimeout(()=>{sock.emit('typing',{chat_id:c.chat_id,is_typing:false});ts=0},1500)};
+  drawBar();
   pane.replaceChildren(
-    h('div',{cls:'head'},h('button',{cls:'back g',onclick:()=>{cur=null;appEl.classList.remove('in-chat');drawChat();drawSide()}},'←'),av(c.name),h('div',{cls:'grow'},h('b',{},c.name),subEl),h('button',{cls:'g',onclick:menu},'⋮')),
-    more,msgsEl,
-    h('div',{cls:'bar'},btn('📎',()=>file.click(),1),file,txt,h('button',{onclick:()=>send(txt)},'Enviar')));
+    h('div',{cls:'head'},
+      h('button',{cls:'back g',onclick:()=>{if(recCtl)recCtl.cancel();cur=null;appEl.classList.remove('in-chat');drawSide();setTimeout(()=>{if(!cur)drawChat()},280)}},'←'),
+      h('div',{cls:'who',onclick:()=>showProfile(c.user_id)},av(c.display_name,c.avatar_url),h('div',{cls:'grow'},h('b',{},c.display_name),subEl)),
+      btn('⋮',()=>showProfile(c.user_id),1)),
+    more,msgsEl,bar);
   try{
     const l=await api('GET','/api/chats/'+c.chat_id+'/messages');
     if(cur!==c)return;
-    l.forEach(m=>add(m));if(l.length<50)more.remove();
+    l.forEach(m=>add(m,0,1));toBottom();if(l.length<50)more.remove();
     sock.emit('message:read',{chat_id:c.chat_id});refreshList()
   }catch(e){alert(e.message)}}
 
+async function showProfile(uid){
+  try{
+    const p=await api('GET','/api/users/'+uid+'/profile');
+    const close=()=>m.remove(),rs=h('input',{placeholder:'Motivo del reporte'});
+    const m=h('div',{cls:'modal',onclick:e=>{if(e.target===m)close()}},h('div',{cls:'card'},
+      h('div',{cls:'cover',style:bg(p.cover_url)}),av(p.display_name,p.avatar_url,'big'),
+      h('div',{cls:'sec'},h('b',{},p.display_name),h('br'),h('small',{},'@'+p.username)),
+      h('div',{cls:'sec'},rs,btn('Reportar',async()=>{if(!rs.value.trim())throw new Error('Indica el motivo');await api('POST','/api/reports',{user_id:p.id,reason:rs.value});alert('Reporte enviado');close()}),
+        btn('Bloquear',async()=>{if(!confirm('Bloquear a '+p.display_name+'?'))return;await api('POST','/api/blocks',{user_id:p.id});close();cur=null;appEl.classList.remove('in-chat');await load();drawChat();drawSide()},1),
+        btn('Cerrar',close,1))));
+    document.body.append(m)
+  }catch(e){alert(e.message)}}
+
 const tick=(id,s)=>{const e=$('#s'+id);if(e){e.textContent=s==='sent'?'✓':'✓✓';e.className=s==='read'?'read':''}};
-function add(m,pre){
+
+function voice(m,u){
+  const a=new Audio(u);a.preload='metadata';
+  const total=()=>isFinite(a.duration)&&a.duration>0?a.duration:(m.duration_sec||0);
+  const bt=h('button',{cls:'pl'},'▶'),fill=h('i'),bar=h('div',{cls:'wave'},fill),tm=h('small',{},fmt(m.duration_sec)),sp=h('button',{cls:'sp g'},'1x');
+  bt.onclick=()=>{if(a.paused){if(playing&&playing!==a)playing.pause();playing=a;a.play().catch(()=>{})}else a.pause()};
+  a.onplay=()=>{bt.textContent='⏸'};a.onpause=()=>{bt.textContent='▶'};
+  a.ontimeupdate=()=>{fill.style.width=(a.currentTime/(total()||1)*100)+'%';tm.textContent=fmt(a.currentTime)+' / '+fmt(total())};
+  a.onended=()=>{fill.style.width='0';bt.textContent='▶';tm.textContent=fmt(total())};
+  bar.onclick=e=>{const r=bar.getBoundingClientRect();a.currentTime=(e.clientX-r.left)/r.width*total()};
+  sp.onclick=()=>{const s={1:1.5,1.5:2,2:1}[a.playbackRate]||1;a.playbackRate=s;sp.textContent=s+'x'};
+  return h('div',{cls:'voice'},bt,h('div',{cls:'grow'},bar,tm),sp)}
+
+function add(m,pre,now){
   if(!msgsEl||!cur||m.chat_id!==cur.chat_id||$('#m'+m.id,msgsEl))return;
   const mine=m.sender_id===me.id,u=BASE+m.media_url;
-  const d=h('div',{cls:'m'+(mine?' me':''),id:'m'+m.id,'data-id':m.id});
-  if(m.type==='image')d.append(h('img',{cls:'pic',src:u,onclick:()=>window.open(u),onload:()=>{if(!pre)msgsEl.scrollTop=msgsEl.scrollHeight}}));
+  const near=msgsEl.scrollHeight-msgsEl.scrollTop-msgsEl.clientHeight<150;
+  const d=h('div',{cls:'m'+(mine?' me':'')+(pre||now?' na':''),id:'m'+m.id,'data-id':m.id});
+  if(m.type==='image')d.append(h('img',{cls:'pic',src:u,onclick:()=>window.open(u),onload:()=>{if(!pre&&(near||mine))toBottom()}}));
   if(m.type==='video')d.append(h('video',{cls:'pic',controls:'',preload:'metadata',poster:u.replace(/\.mp4$/,'.jpg'),src:u}));
+  if(m.type==='audio')d.append(voice(m,u));
   if(m.body)d.append(h('div',{},m.body));
   const t=h('div',{cls:'t'},new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+(m.type==='video'&&m.duration_sec?' · '+m.duration_sec+'s':'')+' ');
   if(mine)t.append(h('span',{id:'s'+m.id}));
   d.append(t);
-  pre?msgsEl.prepend(d):(msgsEl.append(d),msgsEl.scrollTop=msgsEl.scrollHeight);
+  pre?msgsEl.prepend(d):msgsEl.append(d);
+  if(!pre&&!now&&(mine||near))toBottom(1);
   if(mine)tick(m.id,m.status)}
 
 function send(txt){
-  const body=txt.value.trim();if(!body||!cur)return;txt.value='';
+  const body=txt.value.trim();if(!body||!cur)return;txt.value='';txt.dispatchEvent(new Event('x'));
   sock.emit('message:send',{chat_id:cur.chat_id,body},r=>{if(r.ok){add(r.message);refreshList()}else alert(r.error)})}
 
 async function sendFile(f,txt,input){
   input.value='';if(!f||!cur)return;
   const v=f.type.startsWith('video/'),id=cur.chat_id;
   if(v){const d=await dur(f);if(d&&d>VMAX+.5)return alert(`El video dura ${Math.round(d)} s y el maximo es ${VMAX} s`)}
-  const fd=new FormData(),cap=txt.value.trim();if(cap){fd.append('caption',cap);txt.value=''}fd.append('file',f);
+  const fd=new FormData(),cap=txt.value.trim();if(cap){fd.append('caption',cap);txt.value='';txt.dispatchEvent(new Event('x'))}fd.append('file',f);
   try{const r=await up(`/api/chats/${id}/${v?'video':'media'}`,fd,p=>subEl.textContent=p<100?`Subiendo ${p}%`:'Procesando...');add(r.message);refreshList()}
   catch(e){alert(e.message)}finally{subEl.textContent=''}}
 
-async function menu(){
-  const o=prompt('Escribe 1 para Bloquear o 2 para Reportar a '+cur.name);
-  try{
-    if(o==='1'&&confirm('Bloquear a '+cur.name+'?')){await api('POST','/api/blocks',{user_id:cur.user_id});cur=null;appEl.classList.remove('in-chat');await load();drawChat();drawSide()}
-    if(o==='2'){const r=prompt('Motivo del reporte');if(r){await api('POST','/api/reports',{user_id:cur.user_id,reason:r});alert('Reporte enviado')}}
-  }catch(e){alert(e.message)}}
+// ---------- Notas de voz (sin limite de duracion) ----------
+async function startRec(bar,restore){
+  if(!navigator.mediaDevices||!window.MediaRecorder)return alert('Tu navegador no permite grabar audio');
+  let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}catch{return alert('Permite el acceso al microfono para grabar')}
+  const mime=['audio/webm;codecs=opus','audio/mp4','audio/ogg;codecs=opus'].find(t=>MediaRecorder.isTypeSupported(t));
+  const rec=new MediaRecorder(stream,mime?{mimeType:mime}:undefined),parts=[],t0=Date.now();let go=true;
+  const tm=h('b',{},'0:00'),timer=setInterval(()=>{tm.textContent=fmt((Date.now()-t0)/1000)},500);
+  rec.ondataavailable=e=>{if(e.data.size)parts.push(e.data)};
+  rec.onstop=()=>{
+    clearInterval(timer);stream.getTracks().forEach(t=>t.stop());window.onbeforeunload=null;recCtl=null;restore();
+    if(go&&parts.length)sendAudio(new Blob(parts,{type:rec.mimeType}),(Date.now()-t0)/1000)};
+  recCtl={cancel:()=>{go=false;if(rec.state!=='inactive')rec.stop()}};
+  window.onbeforeunload=e=>{e.preventDefault();e.returnValue=''};
+  rec.start(1000);
+  bar.replaceChildren(h('span',{cls:'rdot'}),tm,h('div',{cls:'grow'},h('small',{},'Grabando... toca ➤ para enviar')),btn('🗑',()=>recCtl.cancel(),1),btn('➤',()=>rec.stop()))}
+
+async function sendAudio(blob,secs){
+  if(secs<1||!cur)return;
+  const id=cur.chat_id,ext=blob.type.includes('mp4')?'m4a':blob.type.includes('ogg')?'ogg':'webm';
+  const fd=new FormData();fd.append('file',blob,'nota.'+ext);
+  try{const r=await up(`/api/chats/${id}/audio`,fd,p=>{if(subEl)subEl.textContent=p<100?`Subiendo nota ${p}%`:'Procesando...'});add(r.message);refreshList()}
+  catch(e){alert(e.message)}finally{if(subEl)subEl.textContent=''}}
 
 function connect(){
   sock&&sock.disconnect();
   sock=io(BASE||undefined,{auth:{token:tk}});
-  sock.on('connect_error',e=>e.message==='No autorizado'&&logout());
+  sock.on('connect_error',e=>{if(e.message==='No autorizado')logout()});
   sock.on('message:new',m=>{
     if(cur&&cur.chat_id===m.chat_id){add(m);if(m.sender_id!==me.id)sock.emit('message:read',{chat_id:m.chat_id})}
     refreshList()});
@@ -176,7 +248,7 @@ async function join(t){
     const u=await api('GET','/api/invites/'+t);
     if(!confirm('Agregar a '+u.display_name+' (@'+u.username+') como contacto?'))return;
     const r=await api('POST','/api/invites/'+t+'/accept');
-    await load();drawSide();openChat(r.chat_id,r.user.id,r.user.display_name)
+    await load();drawSide();openChat({chat_id:r.chat_id,user_id:r.user.id,display_name:r.user.display_name})
   }catch(e){alert(e.message)}}
 
 // ---------- Bloqueo con PIN (guardado solo en este dispositivo) ----------

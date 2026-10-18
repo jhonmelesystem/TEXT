@@ -72,4 +72,35 @@ async function makeThumbnail(video, output, duration) {
   }
 }
 
-module.exports = { probeVideo, transcodeVideo, makeThumbnail };
+// Comprueba que haya una pista de audio. La duracion puede faltar en grabaciones del navegador.
+async function probeAudio(file) {
+  let out;
+  try {
+    out = await run(FFPROBE(), [
+      '-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file
+    ], 20000);
+  } catch (err) {
+    if (err.code === 'ENOENT') throw fail('FFMPEG_MISSING', 'ffprobe no encontrado');
+    throw fail('INVALID_AUDIO', 'audio invalido');
+  }
+  let info;
+  try { info = JSON.parse(out); } catch { throw fail('INVALID_AUDIO', 'audio invalido'); }
+  if (!(info.streams || []).some((s) => s.codec_type === 'audio')) throw fail('INVALID_AUDIO', 'audio invalido');
+  const d = parseFloat(info.format && info.format.duration);
+  return { duration: Number.isFinite(d) ? d : null };
+}
+
+// Nota de voz a M4A (AAC mono 48 kbps): suena en todos los navegadores, sin limite de duracion
+async function transcodeAudio(input, output) {
+  try {
+    await run(FFMPEG(), [
+      '-y', '-i', input, '-vn', '-map', '0:a:0', '-map_metadata', '-1',
+      '-c:a', 'aac', '-b:a', '48k', '-ac', '1', '-movflags', '+faststart', output
+    ], 15 * 60 * 1000);
+  } catch (err) {
+    if (err.code === 'ENOENT') throw fail('FFMPEG_MISSING', 'ffmpeg no encontrado');
+    throw fail('TRANSCODE_FAILED', 'no se pudo procesar el audio');
+  }
+}
+
+module.exports = { probeVideo, transcodeVideo, makeThumbnail, probeAudio, transcodeAudio };
