@@ -1,4 +1,11 @@
-require('dotenv').config();
+// Esto hace que lea el .env si estás en tu PC, pero si no existe en Railway, no da error ni rompe nada
+require('dotenv').config({ silent: true });
+// O simplemente:
+// Carga el archivo .env solo si estás en tu computadora (desarrollo local)
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
+
 const http = require('http');
 const path = require('path');
 const express = require('express');
