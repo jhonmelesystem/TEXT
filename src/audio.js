@@ -6,7 +6,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const { requireAuth } = require('./middleware');
-const { toId, getChat, canMessage } = require('./chatlib');
+const { toId, getChat, canSend } = require('./chatlib');
 const { createAndDispatch } = require('./messaging');
 const { probeAudio, transcodeAudio } = require('./ffmpeg');
 const { UPLOAD_DIR, TMP_DIR } = require('./paths');
@@ -54,7 +54,7 @@ router.post('/chats/:id/audio', requireAuth, limiter, async (req, res) => {
     const chatId = toId(req.params.id);
     const info = chatId && (await getChat(chatId, me));
     if (!info) return res.status(404).json({ error: 'Chat no encontrado' });
-    if (!(await canMessage(me, info.other))) {
+    if (!(await canSend(me, info))) {
       return res.status(403).json({ error: 'No puedes enviar mensajes a este usuario' });
     }
     if (active >= MAX_ACTIVE) {
@@ -89,7 +89,7 @@ router.post('/chats/:id/audio', requireAuth, limiter, async (req, res) => {
         }
 
         const message = await createAndDispatch(req.app.get('io'), {
-          chatId, me, other: info.other, type: 'audio', body: null,
+          chatId, me, replyTo: toId(req.body.reply_to), type: 'audio', body: null,
           mediaUrl: '/uploads/' + name, durationSec: Math.max(1, Math.round(meta.duration))
         });
         outPath = null;

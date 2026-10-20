@@ -43,6 +43,12 @@ async function ensureChat(a, b) {
   const hi = Math.max(a, b);
   await db.query('INSERT IGNORE INTO chats (user_a, user_b) VALUES (?, ?)', [lo, hi]);
   const [rows] = await db.query('SELECT id FROM chats WHERE user_a = ? AND user_b = ?', [lo, hi]);
+  try {
+    await db.query('INSERT IGNORE INTO chat_members (chat_id, user_id) VALUES (?, ?), (?, ?)',
+      [rows[0].id, lo, rows[0].id, hi]);
+  } catch (e) {
+    console.error('chat_members:', e.message);
+  }
   return rows[0].id;
 }
 

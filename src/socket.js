@@ -1,7 +1,7 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
-const { toId, getChat, canMessage } = require('./chatlib');
+const { toId, getChat, memberIds, canSend } = require('./chatlib');
 const { createAndDispatch } = require('./messaging');
 
 const room = (userId) => `user:${userId}`;
@@ -23,7 +23,7 @@ module.exports = function initSocket(httpServer) {
     }
   });
 
-  // Al conectarse, los mensajes pendientes pasan a "entregado"
+  // Al conectarse, los mensajes pendientes de conversaciones de dos pasan a "entregado"
   async function markPendingDelivered(me) {
     const [rows] = await db.query(
       `SELECT m.id, m.chat_id, m.sender_id
@@ -49,23 +49,42 @@ module.exports = function initSocket(httpServer) {
     const me = socket.userId;
     socket.join(room(me));
     markPendingDelivered(me).catch((e) => console.error(e));
+    db.query('SELECT display_name FROM users WHERE id = ?', [me])
+      .then(([r]) => { socket.userName = r[0] && r[0].display_name; })
+      .catch(() => {});
 
-    // Enviar mensaje de texto (las imagenes se envian por POST /api/chats/:id/media)
+    // Enviar texto o ubicacion. Opcional: reply_to (id del mensaje al que se responde).
+    // Las imagenes, videos y audios se envian por POST /api/chats/:id/media | video | audio
     socket.on('message:send', async (data, ack) => {
       const reply = typeof ack === 'function' ? ack : () => {};
       try {
-        const chatId = toId(data && data.chat_id);
-        const body = String((data && data.body) || '').trim();
-        if (!chatId || !body || body.length > MAX_BODY) {
+        const d = data || {};
+        const chatId = toId(d.chat_id);
+        const type = d.type === 'location' ? 'location' : 'text';
+        let body = String(d.body || '').trim();
+        let lat = null;
+        let lng = null;
+
+        if (type === 'location') {
+          lat = d.lat == null ? NaN : Number(d.lat);
+          lng = d.lng == null ? NaN : Number(d.lng);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+            return reply({ ok: false, error: 'Ubicacion invalida' });
+          }
+          body = body.slice(0, 200); // nombre o nota opcional del lugar
+        } else if (!body || body.length > MAX_BODY) {
           return reply({ ok: false, error: 'Mensaje invalido' });
         }
+        if (!chatId) return reply({ ok: false, error: 'Mensaje invalido' });
+
         const info = await getChat(chatId, me);
         if (!info) return reply({ ok: false, error: 'Chat no encontrado' });
-        if (!(await canMessage(me, info.other))) {
+        if (!(await canSend(me, info))) {
           return reply({ ok: false, error: 'No puedes enviar mensajes a este usuario' });
         }
         const message = await createAndDispatch(io, {
-          chatId, me, other: info.other, type: 'text', body, originSocket: socket
+          chatId, me, type, body: body || null, lat, lng,
+          replyTo: toId(d.reply_to), originSocket: socket
         });
         reply({ ok: true, message });
       } catch (err) {
@@ -81,6 +100,15 @@ module.exports = function initSocket(httpServer) {
         const chatId = toId(data && data.chat_id);
         const info = chatId && (await getChat(chatId, me));
         if (!info) return reply({ ok: false, error: 'Chat no encontrado' });
+
+        if (info.group) {
+          // En grupos solo se recuerda hasta donde leyo cada persona (no hay ✓✓ por mensaje)
+          await db.query(
+            'UPDATE chat_members SET last_read_id = (SELECT COALESCE(MAX(id), 0) FROM messages WHERE chat_id = ?) WHERE chat_id = ? AND user_id = ?',
+            [chatId, chatId, me]
+          );
+          return reply({ ok: true, count: 0 });
+        }
 
         const [rows] = await db.query(
           "SELECT id FROM messages WHERE chat_id = ? AND sender_id <> ? AND status <> 'read'",
@@ -106,9 +134,12 @@ module.exports = function initSocket(httpServer) {
         const chatId = toId(data && data.chat_id);
         const info = chatId && (await getChat(chatId, me));
         if (!info) return;
-        io.to(room(info.other)).emit('typing', {
-          chat_id: chatId, user_id: me, is_typing: !!data.is_typing
-        });
+        const targets = info.group ? (await memberIds(chatId)).filter((id) => id !== me) : [info.other];
+        for (const id of targets) {
+          io.to(room(id)).emit('typing', {
+            chat_id: chatId, user_id: me, user_name: socket.userName || null, is_typing: !!data.is_typing
+          });
+        }
       } catch (err) {
         console.error(err);
       }
@@ -117,4 +148,3 @@ module.exports = function initSocket(httpServer) {
 
   return io;
 };
-

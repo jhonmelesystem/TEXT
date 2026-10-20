@@ -1,4 +1,6 @@
 -- Base de datos de text. Ejecutar en MySQL Workbench o con: mysql -u root -p < database/schema.sql
+-- El servidor tambien la aplica solo al arrancar (src/migrate.js), y agrega las mejoras
+-- necesarias a las bases creadas con versiones anteriores.
 CREATE DATABASE IF NOT EXISTS text_app CHARACTER SET utf8mb4;
 USE text_app;
 
@@ -38,21 +40,42 @@ CREATE TABLE IF NOT EXISTS invites (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- Una conversacion: 'direct' (dos personas, user_a y user_b) o 'group' (varias, ver chat_members)
 CREATE TABLE IF NOT EXISTS chats (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  user_a BIGINT NOT NULL,
-  user_b BIGINT NOT NULL,
+  type ENUM('direct','group') NOT NULL DEFAULT 'direct',
+  user_a BIGINT NULL,
+  user_b BIGINT NULL,
+  name VARCHAR(60) NULL,
+  avatar_url VARCHAR(255) NULL,
+  created_by BIGINT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (user_a, user_b)
+);
+
+CREATE TABLE IF NOT EXISTS chat_members (
+  chat_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  role ENUM('admin','member') NOT NULL DEFAULT 'member',
+  last_read_id BIGINT NOT NULL DEFAULT 0,
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (chat_id, user_id),
+  INDEX (user_id),
+  FOREIGN KEY (chat_id) REFERENCES chats(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   chat_id BIGINT NOT NULL,
   sender_id BIGINT NOT NULL,
-  type ENUM('text','image','video','audio') DEFAULT 'text',
+  type ENUM('text','image','video','audio','location') DEFAULT 'text',
   body TEXT,
   media_url VARCHAR(255),
   duration_sec INT,
+  lat DOUBLE NULL,
+  lng DOUBLE NULL,
+  reply_to_id BIGINT NULL,
   status ENUM('sent','delivered','read') DEFAULT 'sent',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX (chat_id, created_at),

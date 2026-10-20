@@ -37,6 +37,7 @@ app.use('/api', require('./media'));
 app.use('/api', require('./video'));
 app.use('/api', require('./audio'));
 app.use('/api', require('./profile'));
+app.use('/api', require('./groups'));
 app.use('/api', require('./settings'));
 app.use('/api', (req, res) => res.status(404).json({ error: 'No encontrado' }));
 
@@ -68,11 +69,4 @@ migrate()
   .catch((err) => {
     console.error('No se pudo preparar la base de datos:', err.message);
     process.exit(1);
-
-    // 🔍 Imprimimos el error COMPLETO (incluyendo stack trace) para ver la causa exacta en Railway
-    console.error('❌ ERROR CRITICO AL INICIAR:', err);
-    
-    // Opcional: comentamos el process.exit(1) temporalmente para que el servidor 
-    // al menos se quede encendido y te permita entrar a /api/health a ver qué pasa
-    // process.exit(1); 
   });
