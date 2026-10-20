@@ -75,3 +75,22 @@ body.dark .msgs{background:#222}
   .head .back{display:block}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.m{position:relative}
+.sender{font-size:12px;font-weight:bold;color:var(--blue);margin-bottom:2px}
+.quote{border-left:3px solid var(--blue);background:rgba(26,115,232,.1);padding:3px 8px;margin-bottom:4px;font-size:13px;cursor:pointer}
+.quote div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mut)}
+.m.hl{outline:2px solid var(--blue)}
+.rp{position:absolute;top:2px;right:2px;padding:0 6px;font-size:14px;line-height:20px;opacity:0;background:var(--pane);color:var(--fg);border:1px solid var(--line)}
+.m:hover .rp{opacity:1}
+@media(hover:none){.rp{opacity:.55}}
+.replybar{display:none;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--line);border-left:3px solid var(--blue);background:var(--pane)}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{position:relative}
+.menu{position:absolute;bottom:100%;left:8px;background:var(--bg);border:1px solid var(--line);display:flex;flex-direction:column;z-index:5;animation:pop .15s}
+.menu button{text-align:left;border:0;border-bottom:1px solid var(--line);padding:11px 16px}
+.loc iframe{display:block;border:0;width:240px;height:140px;max-width:100%}
+.card iframe{display:block;border:0}
+.chklist{max-height:220px;overflow:auto;margin:8px 0;border:1px solid var(--line)}
+.chk{display:flex;align-items:center;gap:10px;padding:8px;cursor:pointer;border-bottom:1px solid var(--line)}
+.chk .av{width:32px;height:32px;font-size:13px}
