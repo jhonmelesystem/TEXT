@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_url VARCHAR(255),
   cover_url VARCHAR(255),
   email_verified TINYINT DEFAULT 0,
+  terms_version INT NULL,
+  terms_accepted_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -94,6 +96,12 @@ CREATE TABLE IF NOT EXISTS reports (
   reporter_id BIGINT NOT NULL,
   reported_id BIGINT NOT NULL,
   reason VARCHAR(255),
+  category VARCHAR(30) NULL,
+  message_id BIGINT NULL,
+  chat_id BIGINT NULL,
+  message_type VARCHAR(10) NULL,
+  evidence TEXT NULL,
+  status ENUM('open','reviewed','dismissed') NOT NULL DEFAULT 'open',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

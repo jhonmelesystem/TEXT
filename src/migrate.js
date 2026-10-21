@@ -66,6 +66,16 @@ async function upgrades() {
     }
   });
 
+  await step('users.terms_version', () => addColumn('users', 'terms_version', 'INT NULL'));
+  await step('users.terms_accepted_at', () => addColumn('users', 'terms_accepted_at', 'TIMESTAMP NULL DEFAULT NULL'));
+
+  await step('reports.category', () => addColumn('reports', 'category', 'VARCHAR(30) NULL'));
+  await step('reports.message_id', () => addColumn('reports', 'message_id', 'BIGINT NULL'));
+  await step('reports.chat_id', () => addColumn('reports', 'chat_id', 'BIGINT NULL'));
+  await step('reports.message_type', () => addColumn('reports', 'message_type', 'VARCHAR(10) NULL'));
+  await step('reports.evidence', () => addColumn('reports', 'evidence', 'TEXT NULL'));
+  await step('reports.status', () => addColumn('reports', 'status', "ENUM('open','reviewed','dismissed') NOT NULL DEFAULT 'open'"));
+
   // Las conversaciones de dos personas tambien se registran como miembros
   await step('chat_members (conversaciones existentes)', async () => {
     await db.query('INSERT IGNORE INTO chat_members (chat_id, user_id) SELECT id, user_a FROM chats WHERE user_a IS NOT NULL');

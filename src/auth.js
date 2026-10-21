@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const db = require('./db');
 const { sendCode } = require('./mailer');
+const { TERMS_VERSION } = require('./legal');
 
 const router = express.Router();
 
@@ -81,12 +82,15 @@ router.post('/verify-code', verifyLimiter, async (req, res) => {
     if (displayName.length > 60) {
       return res.status(400).json({ error: 'Nombre demasiado largo' });
     }
+    if (req.body.accept_terms !== true) {
+      return res.status(400).json({ error: 'Debes aceptar los Terminos y la Politica de Privacidad' });
+    }
     const [taken] = await db.query('SELECT id FROM users WHERE username = ?', [username]);
     if (taken.length) return res.status(409).json({ error: 'Ese ID ya esta en uso' });
 
     const [result] = await db.query(
-      'INSERT INTO users (email, username, display_name, email_verified) VALUES (?, ?, ?, 1)',
-      [email, username, displayName]
+      'INSERT INTO users (email, username, display_name, email_verified, terms_version, terms_accepted_at) VALUES (?, ?, ?, 1, ?, NOW())',
+      [email, username, displayName, TERMS_VERSION]
     );
     await db.query('INSERT INTO user_settings (user_id) VALUES (?)', [result.insertId]);
     await db.query('UPDATE email_codes SET used = 1 WHERE id = ?', [codeId]);

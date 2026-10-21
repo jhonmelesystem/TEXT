@@ -277,23 +277,4 @@ router.delete('/blocks/:userId', auth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// ---------- reportar ----------
-const reportLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, limit: 10,
-  message: { error: 'Demasiados reportes. Intenta mas tarde.' }
-});
-
-router.post('/reports', auth, reportLimiter, wrap(async (req, res) => {
-  const me = req.userId;
-  const other = toId(req.body.user_id);
-  const reason = String(req.body.reason || '').trim().slice(0, 255);
-  if (!other || other === me) return res.status(400).json({ error: 'Usuario invalido' });
-  if (!reason) return res.status(400).json({ error: 'Indica el motivo' });
-  const [u] = await db.query('SELECT id FROM users WHERE id = ?', [other]);
-  if (!u.length) return res.status(404).json({ error: 'Usuario no encontrado' });
-
-  await db.query('INSERT INTO reports (reporter_id, reported_id, reason) VALUES (?, ?, ?)', [me, other, reason]);
-  res.status(201).json({ ok: true });
-}));
-
 module.exports = router;

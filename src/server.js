@@ -38,11 +38,15 @@ app.use('/api', require('./video'));
 app.use('/api', require('./audio'));
 app.use('/api', require('./profile'));
 app.use('/api', require('./groups'));
+app.use('/api', require('./reports'));
 app.use('/api', require('./settings'));
 app.use('/api', (req, res) => res.status(404).json({ error: 'No encontrado' }));
 
 // Imagenes y videos enviados (nombres aleatorios e imposibles de adivinar)
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true, index: false }));
+
+// Terminos y Condiciones y Politica de Privacidad (paginas publicas)
+app.use(require('./legal').router);
 
 // Enlace de invitacion (el que lleva el QR): abre la app con el token
 app.get('/invite/:token', (req, res) => {

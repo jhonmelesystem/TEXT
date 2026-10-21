@@ -47,9 +47,20 @@ function logout(){localStorage.removeItem('tk');localStorage.removeItem('pin');c
 async function start(t){tk=t;localStorage.setItem('tk',t);await boot()}
 async function boot(){
   try{me=await api('GET','/api/me');settings=await api('GET','/api/settings');await load()}catch{return show(loginView())}
+  if(me.needs_terms)return show(termsGate());
   fetch(BASE+'/api/limits').then(r=>r.json()).then(l=>VMAX=l.video_max_seconds||60).catch(()=>{});
   connect();show(appView());
   const iv=localStorage.getItem('inv');if(iv){localStorage.removeItem('inv');join(iv)}}
+
+function termsGate(){
+  const ok=h('input',{type:'checkbox'}),err=h('div',{cls:'err'});
+  const link=(p,t)=>h('a',{href:BASE+p,target:'_blank',rel:'noopener'},t);
+  return h('div',{cls:'login'},h('h1',{},'text'),
+    h('p',{},'Actualizamos nuestros Terminos y nuestra Politica de Privacidad. Para seguir usando text debes aceptarlos.'),
+    h('p',{},link('/terminos','Terminos y Condiciones'),' · ',link('/privacidad','Politica de Privacidad')),
+    h('label',{cls:'terms'},ok,h('span',{},' He leido y acepto')),err,
+    h('button',{onclick:async()=>{err.textContent='';if(!ok.checked){err.textContent='Marca la casilla para continuar';return}try{await api('POST','/api/me/accept-terms',{accept:true});await boot()}catch(e){err.textContent=e.message}}},'Aceptar y continuar'),
+    h('button',{cls:'g',onclick:logout},'Cerrar sesion'))}
 
 function loginView(){
   const err=h('div',{cls:'err'}),box=h('div',{cls:'login'}),f={};
@@ -58,7 +69,11 @@ function loginView(){
   const page=(msg,...k)=>box.replaceChildren(h('h1',{},'text'),err,h('p',{cls:'mut'},msg),...k);
   const s1=()=>page('Ingresa tu correo para entrar o registrarte',field('email','correo@ejemplo.com','email'),h('button',{onclick:go(async()=>{await api('POST','/api/auth/request-code',{email:f.email.value});s2(f.email.value)})},'Enviar codigo'));
   const s2=email=>page('Codigo enviado a '+email,field('code','Codigo de 6 digitos'),h('button',{onclick:go(async()=>{const d=await api('POST','/api/auth/verify-code',{email,code:f.code.value});d.token?start(d.token):s3(email,f.code.value)})},'Continuar'));
-  const s3=(email,code)=>page('Crea tu perfil',field('un','Tu ID unico (ej: juan_01)'),field('dn','Tu nombre'),h('button',{onclick:go(async()=>{const d=await api('POST','/api/auth/verify-code',{email,code,username:f.un.value,display_name:f.dn.value});start(d.token)})},'Crear cuenta'));
+  const s3=(email,code)=>{
+    const ok=h('input',{type:'checkbox'});
+    page('Crea tu perfil',field('un','Tu ID unico (ej: juan_01)'),field('dn','Tu nombre'),
+      h('label',{cls:'terms'},ok,h('span',{},' Acepto los ',h('a',{href:BASE+'/terminos',target:'_blank',rel:'noopener'},'Terminos y Condiciones'),' y la ',h('a',{href:BASE+'/privacidad',target:'_blank',rel:'noopener'},'Politica de Privacidad'))),
+      h('button',{onclick:go(async()=>{if(!ok.checked)throw new Error('Debes aceptar los terminos para crear la cuenta');const d=await api('POST','/api/auth/verify-code',{email,code,username:f.un.value,display_name:f.dn.value,accept_terms:true});start(d.token)})},'Crear cuenta'))};
   s1();return box}
 
 function appView(){
@@ -127,6 +142,7 @@ function settingsTab(b){
     h('div',{cls:'sec'},btn('Cambiar tema claro/oscuro',()=>{localStorage.setItem('th',document.body.classList.contains('dark')?'l':'d');theme()},1)),
     secPin,
     h('div',{cls:'sec'},h('h4',{},'Bloqueados'),bl),
+    h('div',{cls:'sec'},h('h4',{},'Legal'),h('a',{href:BASE+'/terminos',target:'_blank',rel:'noopener'},'Terminos y Condiciones'),h('br'),h('a',{href:BASE+'/privacidad',target:'_blank',rel:'noopener'},'Politica de Privacidad')),
     h('div',{cls:'sec'},btn('Cerrar sesion',logout,1)))}
 
 function applyBg(){
@@ -240,14 +256,32 @@ async function showGroup(id){
     document.body.append(m)
   }catch(e){alert(e.message)}}
 
+const CATS=[['spam','Spam o publicidad'],['acoso','Acoso o amenazas'],['sexual','Contenido sexual'],['violencia','Violencia'],['odio','Odio o discriminacion'],['menores','Riesgo para menores'],['otro','Otro']];
+function reportModal({user_id,message_id,name}){
+  let cat='';
+  const det=h('input',{placeholder:'Detalles (opcional)',maxlength:'255'}),blk=h('input',{type:'checkbox'});
+  const m=h('div',{cls:'modal',onclick:e=>{if(e.target===m)m.remove()}},h('div',{cls:'card'},h('div',{cls:'sec'},
+    h('h4',{},message_id?'Reportar mensaje de '+name:'Reportar a '+name),
+    h('div',{cls:'chklist',style:'max-height:none'},...CATS.map(([k,l])=>h('label',{cls:'chk'},h('input',{type:'radio',name:'cat',onchange:()=>{cat=k}}),h('span',{},l)))),
+    det,
+    h('label',{cls:'chk'},blk,h('span',{},'Bloquear tambien a esta persona')),
+    btn('Enviar reporte',async()=>{
+      if(!cat)throw new Error('Elige un motivo');
+      await api('POST','/api/reports',{message_id,user_id,category:cat,reason:det.value});
+      if(blk.checked){await api('POST','/api/blocks',{user_id});await load();if(cur&&!cur.group&&cur.user_id===user_id){m.remove();alert('Reporte enviado y persona bloqueada.');return closeChat()}drawSide()}
+      m.remove();alert('Gracias. Revisaremos el reporte.')}),
+    btn('Cancelar',()=>m.remove(),1))));
+  document.body.append(m)}
+
 async function showProfile(uid){
   try{
     const p=await api('GET','/api/users/'+uid+'/profile');
-    const close=()=>m.remove(),rs=h('input',{placeholder:'Motivo del reporte'});
+    const close=()=>m.remove();
     const m=h('div',{cls:'modal',onclick:e=>{if(e.target===m)close()}},h('div',{cls:'card'},
       h('div',{cls:'cover',style:bg(p.cover_url)}),av(p.display_name,p.avatar_url,'big'),
       h('div',{cls:'sec'},h('b',{},p.display_name),h('br'),h('small',{},'@'+p.username)),
-      h('div',{cls:'sec'},rs,btn('Reportar',async()=>{if(!rs.value.trim())throw new Error('Indica el motivo');await api('POST','/api/reports',{user_id:p.id,reason:rs.value});alert('Reporte enviado');close()}),
+      h('div',{cls:'sec'},
+        btn('Reportar',()=>{close();reportModal({user_id:p.id,name:p.display_name})}),
         btn('Bloquear',async()=>{if(!confirm('Bloquear a '+p.display_name+'?'))return;await api('POST','/api/blocks',{user_id:p.id});close();cur=null;appEl.classList.remove('in-chat');await load();drawChat();drawSide()},1),
         btn('Cerrar',close,1))));
     document.body.append(m)
@@ -273,6 +307,7 @@ function add(m,pre,now){
   const near=msgsEl.scrollHeight-msgsEl.scrollTop-msgsEl.clientHeight<150;
   const d=h('div',{cls:'m'+(mine?' me':'')+(pre||now?' na':''),id:'m'+m.id,'data-id':m.id});
   d.append(h('button',{cls:'rp',title:'Responder',onclick:()=>setReply(m)},'↩'));
+  if(!mine)d.append(h('button',{cls:'rp fl',title:'Reportar',onclick:()=>reportModal({message_id:m.id,user_id:m.sender_id,name:m.sender_name||cur.display_name})},'⚑'));
   if(cur.group&&!mine)d.append(h('div',{cls:'sender'},m.sender_name||''));
   if(m.reply_to_id)d.append(h('div',{cls:'quote',onclick:()=>jump(m.reply_to_id)},h('b',{},m.reply_sender_id===me.id?'Tu':(m.reply_sender_name||'')),h('div',{},snip({type:m.reply_type,body:m.reply_body}))));
   if(m.type==='image')d.append(h('img',{cls:'pic',src:u,onclick:()=>window.open(u),onload:()=>{if(!pre&&(near||mine))toBottom()}}));
